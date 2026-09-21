@@ -1,0 +1,24 @@
+[
+  {
+    "customer_id": "CUST-001",
+    "name": "Priya Nair",
+    "email": "priya.nair@example.com",
+    "signup_date": "2023-02-11",
+    "loyalty_tier": "gold"
+  },
+  {
+    "customer_id": "CUST-002",
+    "name": "Marcus Webb",
+    "email": "marcus.webb@example.com",
+    "signup_date": "2024-06-30",
+    "loyalty_tier": "standard"
+  },
+  {
+    "customer_id": "CUST-003",
+    "name": "Priya Nair",
+    "email": "priya.n.alt@example.com",
+    "signup_date": "2022-09-04",
+    "loyalty_tier": "standard",
+    "note": "Deliberate near-duplicate name to CUST-001 for testing ambiguous-match handling"
+  }
+]

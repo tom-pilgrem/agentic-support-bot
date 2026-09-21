@@ -1,0 +1,47 @@
+[
+  {
+    "order_id": "ORD-1001",
+    "customer_id": "CUST-001",
+    "item": "Wireless Headphones",
+    "amount": 89.99,
+    "status": "delivered",
+    "delivered_date": "2026-09-10",
+    "notes": "Standard case: eligible for return within 30 days, no evidence needed for low value"
+  },
+  {
+    "order_id": "ORD-1002",
+    "customer_id": "CUST-001",
+    "item": "4K Monitor",
+    "amount": 349.00,
+    "status": "delivered",
+    "delivered_date": "2026-09-15",
+    "notes": "Above the $200 auto-refund threshold — should trigger the policy hook in Stage 3"
+  },
+  {
+    "order_id": "ORD-1003",
+    "customer_id": "CUST-002",
+    "item": "Desk Lamp",
+    "amount": 24.50,
+    "status": "delivered",
+    "delivered_date": "2026-09-18",
+    "notes": "Arrived damaged, customer has photo evidence (assume described in chat) — straightforward resolve, do not escalate"
+  },
+  {
+    "order_id": "ORD-1004",
+    "customer_id": "CUST-002",
+    "item": "Espresso Machine",
+    "amount": 219.00,
+    "status": "in_transit",
+    "delivered_date": null,
+    "notes": "Not yet delivered — customer asking where it is, no refund applicable yet"
+  },
+  {
+    "order_id": "ORD-1005",
+    "customer_id": "CUST-002",
+    "item": "Bluetooth Speaker",
+    "amount": 59.00,
+    "status": "delivered",
+    "delivered_date": "2026-08-20",
+    "notes": "Delivered 33 days ago — outside standard 30-day return window, policy is silent on exceptions. Use for policy-gap escalation testing."
+  }
+]
