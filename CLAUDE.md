@@ -6,7 +6,7 @@ reasoning behind each stage. Build strictly in stage order; don't skip ahead to 
 escalation logic before the bare agentic loop is working and tested.
 
 ## Stack
-- Language: [FILL IN — Python or TypeScript]
+- Language: Python
 - Claude Agent SDK for the agent loop, tool registration, and hooks
 - Mock backend: mock_data/customers.json and mock_data/orders.json — no real database
 
