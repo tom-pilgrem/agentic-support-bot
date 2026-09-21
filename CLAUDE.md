@@ -21,7 +21,8 @@ escalation logic before the bare agentic loop is working and tested.
   clarity matters more than reusability.
 
 ## Current stage
-[Update this line as you progress: Stage 0 / 1 / 2 / 3 / 4 / 5 / 6]
+Stage 0 complete (mock data loader + four tools wired as an in-process SDK MCP
+server, smoke-tested end to end). Stage 1 (bare agentic loop) not yet started.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping
