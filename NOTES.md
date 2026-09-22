@@ -25,28 +25,18 @@ honest result, not a dodge of the exercise, and it's worth remembering that
 this exercise may show more dramatic before/after deltas with weaker models,
 more tools, or tools whose *parameters* (not just names) genuinely overlap.
 
-**After rewriting** both descriptions with input format, 2-3 example
-queries, edge cases, and an explicit sentence distinguishing each tool from
-the other (see `support_bot/tools.py`):
+**After rewriting** both descriptions by hand with input format, 2-3
+example queries, edge cases, and an explicit sentence distinguishing each
+tool from the other (see `support_bot/tools.py`) — re-test the same
+messages above and add findings here. Things worth specifically checking
+against the "before" result above:
 
-- One real improvement: given "Here's my account number: ORD-1004, can you
-  check on it?", the model now explicitly says *"It looks like ORD-1004 is
-  an order ID rather than an account number"* before asking to verify —
-  before the rewrite it just asked for an identifier without noticing the
-  mismatch.
-- One unexpected, more important result: given "What's going on with
-  ORD-1004, I'm customer CUST-002", the *before* version called
-  `get_customer` then `lookup_order` (verifying first); the *after* version
-  skipped `get_customer` entirely and called `lookup_order` directly with
-  the customer-provided ID. The new description explicitly states
-  `lookup_order` "requires a customer_id already verified via
-  get_customer" — but that's prose, not a structural constraint, and the
-  model treated an ID the customer just typed as good enough. Tightening
-  the description in one place (clarity about the tool's contract) didn't
-  guarantee the model actually honors that contract.
-
-**Takeaway carried into Stage 3:** description quality changed *some*
-behavior for the better, but did not — and structurally cannot — guarantee
-the verification-before-refund/lookup ordering. That's exactly the "why
-hooks, not prompts" lesson Stage 3 is about, and it showed up organically
-here rather than needing to be manufactured.
+- Does the model now catch an order ID mislabeled as an "account number"
+  before asking to verify, instead of just asking blindly?
+- For a message that hands over both an order_id and a customer_id in one
+  sentence (e.g. "What's going on with ORD-1004, I'm customer CUST-002"),
+  does it still call `get_customer` first, or does it trust the
+  customer-provided ID and go straight to `lookup_order`? Worth noting
+  either way — a description can *say* an ID must be "verified via
+  get_customer" without that being a guarantee the model follows it, which
+  is exactly the gap Stage 3's hooks exist to close.

@@ -21,10 +21,12 @@ escalation logic before the bare agentic loop is working and tested.
   clarity matters more than reusability.
 
 ## Current stage
-Stage 2 complete (get_customer/lookup_order descriptions rewritten with
-input formats, examples, edge cases, and distinguishing sentences; see
-NOTES.md for the actual before/after testing results). Stage 3 (hooks) not
-yet started.
+Stage 2 in progress. "Before" testing done against the thin descriptions
+(see NOTES.md) plus an unrelated identity-guessing bugfix in agent.py. The
+actual description rewrite for get_customer/lookup_order (Task 2.1's core
+exercise) is intentionally left as a manual edit in tools.py, not done by
+Claude — re-test and update NOTES.md once written. Stage 3 (hooks) not yet
+started.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping
