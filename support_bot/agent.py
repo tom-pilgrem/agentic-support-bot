@@ -30,7 +30,11 @@ from support_bot.tools import SUPPORT_BOT_TOOLS
 SYSTEM_PROMPT = (
     "You are a customer support agent. Use the available tools to look up "
     "customers and orders, process refunds, and escalate to a human when "
-    "needed."
+    "needed. Only use a customer identifier (email or customer_id) that the "
+    "customer explicitly provided in their own message. Never guess, infer, "
+    "or reuse any other email or ID you may have access to for any other "
+    "purpose. If the customer hasn't given you an identifier, ask them for "
+    "one."
 )
 
 ALLOWED_TOOLS = [
@@ -58,6 +62,7 @@ async def run_agent(message: str) -> AgentResult:
         mcp_servers={"support_bot": SUPPORT_BOT_TOOLS},
         allowed_tools=ALLOWED_TOOLS,
         system_prompt=SYSTEM_PROMPT,
+        setting_sources=[],  # don't load this machine's own CLAUDE.md/settings
         max_turns=10,
     )
 
