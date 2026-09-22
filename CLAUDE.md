@@ -21,8 +21,10 @@ escalation logic before the bare agentic loop is working and tested.
   clarity matters more than reusability.
 
 ## Current stage
-Stage 0 complete (mock data loader + four tools wired as an in-process SDK MCP
-server, smoke-tested end to end). Stage 1 (bare agentic loop) not yet started.
+Stage 1 complete (support_bot/agent.py + main.py: bare agentic loop driven
+solely by stop_reason, tested against the Stage 1 order-status case and the
+zero-tool-call clarifying-question case). Stage 2 (tool selection descriptions)
+not yet started.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping
