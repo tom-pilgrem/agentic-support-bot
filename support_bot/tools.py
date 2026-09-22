@@ -111,7 +111,17 @@ def _generate_ticket_id(summary: str) -> str:
 
 @tool(
     "get_customer",
-    "Retrieves customer information",
+    "Looks up a customer's own account record — name, email, signup date, "
+    "and loyalty tier — by their email address or customer_id (format "
+    "'CUST-XXX'). Use this to verify who you're talking to, or to answer "
+    "questions about the customer's account itself. Example queries: "
+    "\"my email is jane@example.com, what's my loyalty tier?\", \"look up "
+    "customer CUST-002\", \"do you have an account for this email?\". If "
+    "the identifier doesn't match any customer, this returns a structured "
+    "validation error — ask the customer to confirm it rather than "
+    "guessing another value. This tool does NOT look up orders: an order "
+    "ID (e.g. 'ORD-1004') is never a valid input here — use lookup_order "
+    "for anything about a specific order.",
     {
         "type": "object",
         "properties": {
@@ -130,7 +140,17 @@ async def get_customer_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "lookup_order",
-    "Retrieves order details",
+    "Looks up one specific order's details — item, amount, status, and "
+    "delivery date — by its order_id (format 'ORD-XXXX'). Requires a "
+    "customer_id already verified via get_customer, to confirm the order "
+    "actually belongs to that customer. Use this for questions about an "
+    "order's status, contents, or refund eligibility. Example queries: "
+    "\"what's the status of order ORD-1002?\", \"has my order shipped "
+    "yet?\", \"can I return ORD-1005?\". If the order doesn't exist, or "
+    "exists but belongs to a different customer, this returns a "
+    "structured error — don't retry by guessing another order_id or "
+    "customer_id. This tool does NOT look up customer account info (name, "
+    "email, loyalty tier) — use get_customer for that.",
     {
         "type": "object",
         "properties": {
