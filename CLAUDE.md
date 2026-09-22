@@ -21,10 +21,10 @@ escalation logic before the bare agentic loop is working and tested.
   clarity matters more than reusability.
 
 ## Current stage
-Stage 1 complete (support_bot/agent.py + main.py: bare agentic loop driven
-solely by stop_reason, tested against the Stage 1 order-status case and the
-zero-tool-call clarifying-question case). Stage 2 (tool selection descriptions)
-not yet started.
+Stage 2 complete (get_customer/lookup_order descriptions rewritten with
+input formats, examples, edge cases, and distinguishing sentences; see
+NOTES.md for the actual before/after testing results). Stage 3 (hooks) not
+yet started.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping
