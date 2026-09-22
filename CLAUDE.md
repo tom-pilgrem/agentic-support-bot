@@ -21,12 +21,14 @@ escalation logic before the bare agentic loop is working and tested.
   clarity matters more than reusability.
 
 ## Current stage
-Stage 2 complete. get_customer/lookup_order descriptions rewritten by hand
-(input formats, examples, edge cases, distinguishing sentences) and
-re-tested against ~11 messages — zero wrong-tool or unnecessary calls. Also
-found and fixed (twice) an unrelated identity-guessing bug in agent.py's
-SYSTEM_PROMPT. Full before/after writeup in NOTES.md. Stage 3 (hooks) not
-yet started.
+Stage 3 complete. Two hooks in support_bot/hooks.py (RefundEnforcement)
+block process_refund: unless get_customer already verified the customer_id
+this session, and unconditionally above the $200 policy limit. Both
+confirmed working end-to-end, including a real prove-it-matters comparison
+against prompt-only enforcement. Found and fixed a hook wire-format bug
+along the way (PostToolUse tool_response is the bare content-block list,
+not the dict our tool wrapper returns). Full writeup in NOTES.md. Stage 4
+(structured errors) not yet started.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping

@@ -25,6 +25,7 @@ from claude_agent_sdk import (
     query,
 )
 
+from support_bot.hooks import RefundEnforcement
 from support_bot.tools import SUPPORT_BOT_TOOLS
 
 SYSTEM_PROMPT = (
@@ -37,7 +38,10 @@ SYSTEM_PROMPT = (
     "the customer to confirm a candidate email or ID that they didn't "
     "type. You have no information about who this customer is until they "
     "tell you. If you don't have an identifier from them, simply ask them "
-    "to provide one; do not propose a value of your own."
+    "to provide one; do not propose a value of your own. If process_refund "
+    "is blocked, that block is final for this conversation — don't retry it "
+    "or argue the customer's case yourself; call escalate_to_human instead "
+    "and explain to the customer that it's been handed off."
 )
 
 ALLOWED_TOOLS = [
@@ -60,12 +64,18 @@ class AgentResult:
 
 
 async def run_agent(message: str) -> AgentResult:
+    # A fresh RefundEnforcement per call: "verified earlier in the same
+    # session" means this session, so the verified-customer set must not
+    # survive past this one run_agent() call.
+    enforcement = RefundEnforcement()
+
     options = ClaudeAgentOptions(
         tools=[],  # no built-in tools (Bash, Read, ...) — only our four
         mcp_servers={"support_bot": SUPPORT_BOT_TOOLS},
         allowed_tools=ALLOWED_TOOLS,
         system_prompt=SYSTEM_PROMPT,
         setting_sources=[],  # don't load this machine's own CLAUDE.md/settings
+        hooks=enforcement.as_hook_config(),
         max_turns=10,
     )
 
