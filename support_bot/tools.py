@@ -111,7 +111,15 @@ def _generate_ticket_id(summary: str) -> str:
 
 @tool(
     "get_customer",
-    "Retrieves customer information",
+    "Looks up a customer's own account (name, email, signup date, loyalty "
+    "tier) by their email address or customer_id (format 'CUST-XXX'). "
+    "Example queries: 'my email is jane@example.com, what's my loyalty "
+    "tier?', 'look up customer CUST-002', 'do you have an account for "
+    "this email?'. If the identifier doesn't match any customer, this "
+    "returns a structured error — ask the customer to confirm it rather "
+    "than guessing another value. Does NOT look up orders — an order ID "
+    "(e.g. 'ORD-1004') is never a valid input here; use lookup_order for "
+    "anything about a specific order.",
     {
         "type": "object",
         "properties": {
@@ -130,7 +138,16 @@ async def get_customer_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "lookup_order",
-    "Retrieves order details",
+    "Looks up one specific order's details (item, amount, status, "
+    "delivery date) by its order_id (format 'ORD-XXXX'), and requires a "
+    "customer_id already verified via get_customer to confirm the order "
+    "belongs to that customer. Example queries: 'what's the status of "
+    "order ORD-1002?', 'has my order shipped yet?', 'can I return "
+    "ORD-1005?'. If the order doesn't exist, or exists but belongs to a "
+    "different customer, this returns a structured error — don't retry "
+    "by guessing another order_id or customer_id. Does NOT look up "
+    "customer account info (name, email, loyalty tier) — use "
+    "get_customer for that.",
     {
         "type": "object",
         "properties": {
@@ -171,7 +188,7 @@ async def process_refund_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "escalate_to_human",
-    "Hands off the conversation to a human support agent",
+    "Hands off the conversation to a human support agent. The summary should be structured: root cause, what was tried, recommended action. Only use this tool when the agent is unable to resolve the issue, or when the customer explicitly requests human support.",
     {
         "type": "object",
         "properties": {
