@@ -18,7 +18,7 @@ process_refund.
 
 import json
 import random
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
@@ -116,6 +116,20 @@ def lookup_order(order_id: str, customer_id: str) -> dict[str, Any]:
     return _with_return_window(_without_test_annotations(order))
 
 
+def return_window_deadline(delivered_date: str) -> date:
+    """The last day an order delivered on `delivered_date` can be refunded."""
+    return date.fromisoformat(delivered_date) + timedelta(days=RETURN_WINDOW_DAYS)
+
+
+def is_within_return_window(order: dict[str, Any]) -> bool:
+    """The single definition of the return-window rule, used both by
+    lookup_order (to tell the model) and by the Stage 6 hook (to enforce
+    it). An order that hasn't been delivered yet has no window open."""
+    if order.get("delivered_date") is None:
+        return False
+    return MOCK_TODAY <= return_window_deadline(order["delivered_date"])
+
+
 def _with_return_window(order: dict[str, Any]) -> dict[str, Any]:
     """Add the return-window facts the refund policy depends on, computed
     here rather than left to the model: in Stage 6 testing the model read
@@ -127,7 +141,7 @@ def _with_return_window(order: dict[str, Any]) -> dict[str, Any]:
     return {
         **order,
         "days_since_delivery": days,
-        "within_return_window": days <= RETURN_WINDOW_DAYS,
+        "within_return_window": is_within_return_window(order),
     }
 
 
