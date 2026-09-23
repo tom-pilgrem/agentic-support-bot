@@ -35,6 +35,8 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
+from dotenv import load_dotenv
+
 from support_bot.hooks import RefundEnforcement
 from support_bot.tools import SUPPORT_BOT_TOOLS
 
@@ -204,6 +206,9 @@ async def run_conversation(first_message: str | None) -> None:
 def main() -> None:
     # An optional first message can be passed on the command line; after
     # that the conversation continues interactively on stdin.
+    # Pick up ANTHROPIC_API_KEY from a gitignored .env file, if there is
+    # one. A variable already set in the shell takes priority over .env.
+    load_dotenv()
     if not os.environ.get("ANTHROPIC_API_KEY"):
         sys.exit(MISSING_API_KEY_MESSAGE)
 
