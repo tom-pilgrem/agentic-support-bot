@@ -174,3 +174,63 @@ sharper point about why hooks matter: prompt-only enforcement isn't just
 nobody remembers to write it down in prose somewhere — a hook doesn't
 have that failure mode, since the rule lives in code that runs whether or
 not anyone thought to mention it in the system prompt.
+
+## Stage 4 — structured error responses (Task 2.2)
+
+**Setup:** two new error cases added on top of the validation/permission
+ones that already existed from earlier stages:
+1. `_simulate_transient_failure()` in `support_bot/tools.py` — a 15%
+   random chance (`TRANSIENT_ERROR_RATE`), checked at the top of
+   `get_customer` and `lookup_order`, of returning a
+   `{"errorCategory": "transient", "isRetryable": true, ...}` error
+   instead of doing the real lookup. Deliberately not tied to any
+   specific mock data row (per the brief's own wording, "you simulate
+   randomly") — a real timeout can hit any request.
+2. A `business`/non-retryable check inside `process_refund` itself for
+   amounts over `REFUND_AMOUNT_LIMIT`. This constant used to live only in
+   `hooks.py`; moved it to `tools.py` and had `hooks.py` import it, so the
+   $200 figure has one home instead of two copies that could drift.
+   `SYSTEM_PROMPT` also got a short addition telling the model how to
+   react per category: retry once on `isRetryable: true`, never retry
+   otherwise — explain and escalate instead.
+
+**A wrinkle worth flagging:** the amount check inside `process_refund` is
+*dead code in normal operation*. The Stage 3 hook's `PreToolUse` check
+already denies an over-limit `process_refund` call before this function's
+body ever runs — so under the real agent loop, with hooks enabled, this
+branch cannot fire. It's kept anyway as a defense-in-depth backstop (in
+case something ever calls this function without going through that hook),
+and it's exactly what Stage 4's brief asks for as "a refund request above
+policy limit (business, not retryable, customer-friendly message)" — but
+demonstrating it live meant temporarily disabling the Stage 3 hook first
+(same technique as the Stage 3 write-up above), not just sending an
+ordinary customer message through the normal agent loop.
+
+**Confirmed working (real SDK runs), one per category:**
+- **Validation** (`ORD-9999`, doesn't exist): one `lookup_order` call,
+  no retry, agent asked the customer to double-check the order number.
+- **Business** (refund over $200, hook disabled to reach the backstop):
+  one `process_refund` call, denied, explained the $200 limit in plain
+  language, escalated with `reason="policy_exception_needed"` — no
+  retry attempted.
+- **Transient, recovers on retry** (forced to fail exactly once via a
+  monkeypatched `_simulate_transient_failure`): `get_customer` was
+  called twice back-to-back with identical arguments, second one
+  succeeded, and the agent continued normally without ever mentioning
+  the timeout to the customer.
+- **Transient, persists** (forced to always fail): `lookup_order` was
+  called twice, both failed, and the agent stopped after the one retry
+  — explained it looked like a "temporary system issue," and escalated
+  with `reason="unable_to_progress"` rather than looping indefinitely or
+  blaming the customer's account.
+
+The interesting contrast with Stage 3: getting the agent to behave
+differently per error category didn't need a hook at all, just a
+system-prompt sentence and honest category labels on the errors
+themselves — because *how to react to a failure* isn't a compliance rule
+that must hold every single time regardless of what the model wants
+(that's what hooks are for); it's a judgment call the model is well
+suited to make correctly, given the information it needs to make it. The
+lesson isn't "hooks vs. prompts," it's using each where it fits: hooks for
+rules that can never be argued around, prompts for behavior that just
+needs good enough information to get right most of the time.

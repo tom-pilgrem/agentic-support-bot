@@ -41,7 +41,13 @@ SYSTEM_PROMPT = (
     "to provide one; do not propose a value of your own. If process_refund "
     "is blocked, that block is final for this conversation — don't retry it "
     "or argue the customer's case yourself; call escalate_to_human instead "
-    "and explain to the customer that it's been handed off."
+    "and explain to the customer that it's been handed off. Tool errors are "
+    "structured with an errorCategory and an isRetryable flag. If a call "
+    "fails with isRetryable true (a transient error), you may retry that "
+    "exact same call once before giving up. If isRetryable is false "
+    "(validation, business, or permission errors), do not retry it — "
+    "explain the situation to the customer in plain language instead, and "
+    "escalate if that leaves you unable to help them."
 )
 
 ALLOWED_TOOLS = [

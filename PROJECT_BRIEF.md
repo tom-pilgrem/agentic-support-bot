@@ -79,7 +79,25 @@ several stages is to *watch something fail* first, then fix it — that's what w
 - Confirm the agent behaves differently per category — e.g. it can retry a transient error once,
   but explains a business error to the customer rather than retrying.
 
-### Stage 5 — Escalation calibration (Task 5.2)
+### Stage 5 — Multi-turn conversation loop (Task 1.7)
+- Right now `main.py` is single-shot: every invocation opens a brand new session with no memory
+  of anything said before it. That's fine for testing one tool call in isolation, but it isn't a
+  "somewhat functional" chatbot — a real customer can't answer a clarifying question, because
+  there's no way to send it a second message in the same conversation.
+- Replace the one-shot `query()` call with the SDK's `ClaudeSDKClient` — connect once, then let
+  the customer send several messages back and forth in the same live conversation, with full
+  message history genuinely carried across turns (`query()` is explicitly the wrong primitive for
+  this per the SDK's own docs: stateless, one-shot, no memory between calls; `ClaudeSDKClient` is
+  the stateful, bidirectional one built for exactly this).
+- Test: send "Hey, I ordered a bluetooth speaker a while ago, I haven't received it" with no
+  identifier. Confirm the agent asks for one. Then, **in that same running conversation**, reply
+  with just the customer ID — confirm it doesn't re-ask, remembers the original question, and
+  resolves it on the next turn instead of starting over.
+- Also confirm the Stage 3 hook's verification state survives across turns correctly: verify a
+  customer via `get_customer` in one turn, then ask for a refund in a later turn of the *same*
+  conversation — it should be treated as already verified, not re-blocked.
+
+### Stage 6 — Escalation calibration (Task 5.2)
 - Write explicit escalation criteria into the system prompt, with 2-4 few-shot examples covering:
   - Customer explicitly asks for a human → escalate immediately, no investigation first.
   - Straightforward case within policy (standard return, has evidence) → resolve, don't escalate.
@@ -88,7 +106,7 @@ several stages is to *watch something fail* first, then fix it — that's what w
   angry customer with an easy, in-policy request — the agent should acknowledge the frustration
   but still resolve it, not escalate just because they're upset.
 
-### Stage 6 — Multi-concern decomposition (Task 1.4)
+### Stage 7 — Multi-concern decomposition (Task 1.4)
 - Send a single message bundling two issues at once (e.g. "my last order never arrived AND I
   want to update my email on file"). Confirm the agent investigates both, uses shared context
   efficiently, and gives one synthesized response rather than only handling the first thing it
@@ -98,8 +116,9 @@ several stages is to *watch something fail* first, then fix it — that's what w
 - Turn the four tools into a real local **MCP server** instead of in-process functions, and
   connect via `.mcp.json` — this gets you hands-on with Task 2.4 (MCP server scoping,
   project vs user config) which the core exercise above doesn't cover.
-- Add a `--resume` flow: start a session, walk away, resume it later with `--resume <name>` and
-  confirm context carries over (Task 1.7).
+- Add a `--resume <name>` flag on top of Stage 5's `ClaudeSDKClient` loop: persist the session id,
+  quit the process, and reopen the *same* conversation later in a new invocation — confirm context
+  still carries over across process runs, not just across turns within one run (Task 1.7).
 - Log a structured handoff summary (customer ID, root cause, recommended action) whenever
   `escalate_to_human` fires, so a human agent has everything without reading the transcript
   (Task 1.4).
@@ -183,5 +202,6 @@ them yourself as part of the exercise rather than copying a better version from 
 | 2 | 2.1 | Why tool descriptions, not few-shot examples or a routing layer, are the first fix for ambiguous tool selection |
 | 3 | 1.5, 1.4 | Why hooks give deterministic guarantees that prompts can't, for compliance-critical ordering |
 | 4 | 2.2 | Why generic error strings prevent the agent making good recovery decisions |
-| 5 | 5.2 | Why sentiment and self-reported confidence are unreliable escalation triggers |
-| 6 | 1.4 | How to decompose and synthesize multi-concern requests |
+| 5 | 1.7 | Why `ClaudeSDKClient` (stateful, bidirectional) is the right primitive for multi-turn context, and `query()` (one-shot) is not |
+| 6 | 5.2 | Why sentiment and self-reported confidence are unreliable escalation triggers |
+| 7 | 1.4 | How to decompose and synthesize multi-concern requests |
