@@ -83,9 +83,10 @@ class RefundEnforcement:
     """Holds the one piece of state these hooks need: which customer_ids
     have been verified via get_customer so far in this session.
 
-    A fresh instance belongs to a single agent session (one `run_agent`
-    call) — it must not be reused or shared across sessions, since
-    "verified earlier in the same session" is exactly what it tracks.
+    A fresh instance belongs to a single conversation (one
+    `run_conversation` call, spanning every customer message in it) — it
+    must not be reused or shared across conversations, since "verified
+    earlier in the same session" is exactly what it tracks.
     """
 
     def __init__(self) -> None:

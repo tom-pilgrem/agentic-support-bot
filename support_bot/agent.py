@@ -1,11 +1,19 @@
-"""Stage 1: the bare agentic loop.
+"""Stage 5: a multi-turn conversation loop on top of the Stage 1 agentic loop.
 
-Sends one customer message through the Claude Agent SDK with the four
-support tools registered, and returns once the SDK reports the turn is
-over. `stop_reason` on the terminal ResultMessage is the only thing that
-decides "are we done" — never the presence of assistant text, and never a
-manually-counted number of iterations. (`max_turns` below is a safety
-ceiling passed to the SDK, not something this code counts itself.)
+Stage 1-4 used the SDK's one-shot `query()` function: every invocation
+was a brand new session with no memory, so the customer could never
+answer a clarifying question. This module instead uses `ClaudeSDKClient`,
+the SDK's stateful, bidirectional client: it connects once, and every
+customer message after that is sent into the *same* live session, so the
+full message history (earlier questions, tool results, the agent's own
+replies) carries across turns.
+
+Each individual turn is still the Stage 1 agentic loop: send a message,
+let the SDK run tools until it's done, and decide "this turn is over"
+from `stop_reason` on the terminal ResultMessage — never from the
+presence of assistant text, and never from a manually-counted number of
+iterations. (`max_turns` below is a safety ceiling passed to the SDK, not
+something this code counts itself.)
 
 The Agent SDK runs its own internal loop against the CLI subprocess and
 calls registered tools automatically; this module doesn't dispatch tool
@@ -19,10 +27,10 @@ import sys
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
+    ClaudeSDKClient,
     ResultMessage,
     TextBlock,
     ToolUseBlock,
-    query,
 )
 
 from support_bot.hooks import RefundEnforcement
@@ -71,26 +79,33 @@ class AgentResult:
         return self.stop_reason == "end_turn" and self.text is not None
 
 
-async def run_agent(message: str) -> AgentResult:
-    # A fresh RefundEnforcement per call: "verified earlier in the same
-    # session" means this session, so the verified-customer set must not
-    # survive past this one run_agent() call.
-    enforcement = RefundEnforcement()
+EXIT_COMMANDS = {"quit", "exit"}
 
-    options = ClaudeAgentOptions(
+
+def build_options(enforcement: RefundEnforcement) -> ClaudeAgentOptions:
+    return ClaudeAgentOptions(
         tools=[],  # no built-in tools (Bash, Read, ...) — only our four
         mcp_servers={"support_bot": SUPPORT_BOT_TOOLS},
         allowed_tools=ALLOWED_TOOLS,
         system_prompt=SYSTEM_PROMPT,
         setting_sources=[],  # don't load this machine's own CLAUDE.md/settings
         hooks=enforcement.as_hook_config(),
-        max_turns=10,
+        max_turns=10,  # per customer message, not per conversation
     )
+
+
+async def run_turn(client: ClaudeSDKClient, message: str) -> AgentResult:
+    """Send one customer message into the already-connected conversation
+    and wait for the agent to finish responding to it."""
+    await client.query(message)
 
     tool_calls: list[str] = []
     result: ResultMessage | None = None
 
-    async for event in query(prompt=message, options=options):
+    # receive_response() yields this turn's messages and stops after the
+    # ResultMessage. Unlike query()'s stream, it does NOT end the session —
+    # the client stays connected and ready for the next customer message.
+    async for event in client.receive_response():
         if isinstance(event, AssistantMessage):
             for block in event.content:
                 if isinstance(block, ToolUseBlock):
@@ -103,14 +118,12 @@ async def run_agent(message: str) -> AgentResult:
             # The ONLY thing this loop uses to decide the turn is over:
             # stop_reason on the terminal ResultMessage. Not the text
             # printed above — that's just for visibility while the loop
-            # runs. ResultMessage is always the last item query() yields,
-            # so we just record it and let the generator finish on its own
-            # rather than breaking out early (an early return/break here
-            # trips up the SDK's async generator cleanup).
+            # runs. We record it and let receive_response() finish on its
+            # own rather than breaking out early.
             result = event
 
     if result is None:
-        # query()'s stream always ends with a ResultMessage; getting here
+        # receive_response() only ends after a ResultMessage; getting here
         # means the CLI process ended without producing one.
         raise RuntimeError("Agent SDK stream ended without a ResultMessage")
 
@@ -120,18 +133,56 @@ async def run_agent(message: str) -> AgentResult:
     return AgentResult(result.stop_reason, None, tool_calls)
 
 
-def main() -> None:
-    message = " ".join(sys.argv[1:]) or (
-        "What's the status of order ORD-1002 for customer CUST-001?"
-    )
-    print(f"customer message: {message!r}\n")
-    result = asyncio.run(run_agent(message))
+async def read_customer_message() -> str | None:
+    """Read the next customer message from stdin. Returns None when the
+    customer is done (typed quit/exit, or stdin closed)."""
+    try:
+        # input() blocks, so run it in a thread to keep the event loop (and
+        # the SDK client's background reader) free while we wait.
+        line = await asyncio.to_thread(input, "\ncustomer> ")
+    except EOFError:
+        return None
+    if not sys.stdin.isatty():
+        print(line)  # piped input isn't echoed by the terminal; show it in the log
+    line = line.strip()
+    if line.lower() in EXIT_COMMANDS:
+        return None
+    return line
 
-    print()
-    if result.succeeded:
-        print(result.text)
-    else:
-        print(f"[did not complete normally] stop_reason={result.stop_reason}")
+
+async def run_conversation(first_message: str | None) -> None:
+    # One RefundEnforcement for the whole conversation, not one per
+    # message: "verified earlier in the same session" now means earlier in
+    # this conversation, so a customer verified on turn 1 must still count
+    # as verified when they ask for a refund on turn 3.
+    enforcement = RefundEnforcement()
+
+    async with ClaudeSDKClient(options=build_options(enforcement)) as client:
+        if first_message is not None:
+            message = first_message
+            print(f"\ncustomer> {message}")
+        else:
+            message = await read_customer_message()
+
+        while message is not None:
+            if message:  # skip blank lines
+                result = await run_turn(client, message)
+                print()
+                if result.succeeded:
+                    print(f"agent> {result.text}")
+                else:
+                    print(f"[did not complete normally] stop_reason={result.stop_reason}")
+            message = await read_customer_message()
+
+    print("\n[conversation ended]")
+
+
+def main() -> None:
+    # An optional first message can be passed on the command line; after
+    # that the conversation continues interactively on stdin.
+    first_message = " ".join(sys.argv[1:]) or None
+    print("Customer support chat — type 'quit' to end the conversation.")
+    asyncio.run(run_conversation(first_message))
 
 
 if __name__ == "__main__":
