@@ -30,7 +30,12 @@ case before this code runs in normal operation). REFUND_AMOUNT_LIMIT now
 lives in tools.py as the single source of truth; hooks.py imports it.
 SYSTEM_PROMPT tells the model to retry once on isRetryable true, never
 otherwise. Confirmed end-to-end per category. Full writeup in NOTES.md.
-Stage 5 (escalation calibration) not yet started.
+
+PROJECT_BRIEF.md's staging was revised: a new Stage 5 (multi-turn
+conversation loop, Task 1.7 — swap the one-shot query() call for the
+SDK's stateful ClaudeSDKClient) was inserted after Stage 4. Escalation
+calibration is now Stage 6, multi-concern decomposition is now Stage 7.
+Stage 5 (multi-turn conversation loop) not yet started.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping
