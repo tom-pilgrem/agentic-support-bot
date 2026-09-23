@@ -234,3 +234,46 @@ suited to make correctly, given the information it needs to make it. The
 lesson isn't "hooks vs. prompts," it's using each where it fits: hooks for
 rules that can never be argued around, prompts for behavior that just
 needs good enough information to get right most of the time.
+
+## Post-Stage-4 hardening — two-factor customer verification
+
+While manually testing Stage 4, tried "My email is priya.nair@example.com,
+what's my loyalty tier?" — worked correctly (exact email match), but
+raised the question of whether a single identifier is strong enough
+verification at all, given `mock_data/customers.json` has a deliberate
+near-duplicate name (`CUST-001` and `CUST-003` are both "Priya Nair",
+different emails) explicitly seeded "for testing ambiguous-match
+handling."
+
+Turned out that scenario couldn't actually be exercised: `get_customer`
+only ever matched by exact email *or* exact customer_id, and neither
+field is ever ambiguous on its own in this data — the "ambiguity" was
+only ever by name, and name was never a lookup key. So decided to raise
+the bar rather than rely on data that couldn't trigger the failure mode
+it was meant to test: `get_customer` now requires **both** email and
+customer_id, and only verifies when they match the *same* account.
+
+**Changed:** `data.find_customer(email, customer_id)` (was
+`find_customer(identifier)`), `tools.get_customer(email, customer_id)`
+(was `get_customer(identifier)`), the tool's schema (two required
+properties instead of one), and `SYSTEM_PROMPT` (never call
+`get_customer` with only one of the two; ask for whichever is missing).
+
+**Confirmed working (real SDK runs):**
+- Only one of the two given → agent asks for the other, doesn't call
+  the tool or guess the missing value.
+- Matching pair (`CUST-001` + `priya.nair@example.com`) → verifies,
+  answers directly.
+- Mismatched pair (`CUST-002` + `priya.nair@example.com` — a real email,
+  wrong id attached) → `validation` error, agent asks the customer to
+  double-check both rather than guessing a fix.
+- Downstream Stage 3 hook still works correctly off the new shape:
+  verified via the two-factor check, then a same-session refund request
+  was still correctly recognized as verified.
+
+Worth remembering: this wasn't prompted by a functional bug (the
+original single-identifier version worked exactly as designed), it came
+from noticing the mock data's own stated intent ("for testing
+ambiguous-match handling") couldn't actually be reached by the code as
+written — a mismatch between what the test data claimed to cover and
+what the implementation could actually be tested against.

@@ -64,15 +64,16 @@ def _simulate_transient_failure() -> dict[str, Any] | None:
 # --- Plain functions (the actual business logic) ---------------------------
 
 
-def get_customer(identifier: str) -> dict[str, Any]:
+def get_customer(email: str, customer_id: str) -> dict[str, Any]:
     if (timeout := _simulate_transient_failure()) is not None:
         return timeout
-    customer = data.find_customer(identifier)
+    customer = data.find_customer(email, customer_id)
     if customer is None:
         return _error(
             "validation",
             False,
-            f"No customer found matching '{identifier}'.",
+            "That email and customer ID don't match the same account on "
+            "file — please double-check both.",
         )
     return customer
 
@@ -157,28 +158,37 @@ def _generate_ticket_id(summary: str) -> str:
 
 @tool(
     "get_customer",
-    "Looks up a customer's own account (name, email, signup date, loyalty "
-    "tier) by their email address or customer_id (format 'CUST-XXX'). "
-    "Example queries: 'my email is jane@example.com, what's my loyalty "
-    "tier?', 'look up customer CUST-002', 'do you have an account for "
-    "this email?'. If the identifier doesn't match any customer, this "
-    "returns a structured error — ask the customer to confirm it rather "
-    "than guessing another value. Does NOT look up orders — an order ID "
-    "(e.g. 'ORD-1004') is never a valid input here; use lookup_order for "
-    "anything about a specific order.",
+    "Verifies a customer's identity and looks up their own account (name, "
+    "signup date, loyalty tier). Requires BOTH their email address AND "
+    "their customer_id (format 'CUST-XXX') — a single identifier alone is "
+    "not enough to verify someone; both must be typed by the customer "
+    "themselves and must match the same account. Example queries: 'my "
+    "email is jane@example.com and my customer ID is CUST-002, what's my "
+    "loyalty tier?', 'verify me — CUST-001, priya.nair@example.com'. If "
+    "the customer has only given you one of the two, ask for the other "
+    "one instead of calling this tool or guessing the missing value. If "
+    "the email and customer_id don't both match the same account, this "
+    "returns a structured error — ask the customer to double-check both "
+    "rather than guessing new values. Does NOT look up orders — an order "
+    "ID (e.g. 'ORD-1004') is never a valid input here; use lookup_order "
+    "for anything about a specific order.",
     {
         "type": "object",
         "properties": {
-            "identifier": {
+            "email": {
                 "type": "string",
-                "description": "Customer email or customer_id",
-            }
+                "description": "Customer's email address, as typed by the customer",
+            },
+            "customer_id": {
+                "type": "string",
+                "description": "Customer's customer_id (format 'CUST-XXX'), as typed by the customer",
+            },
         },
-        "required": ["identifier"],
+        "required": ["email", "customer_id"],
     },
 )
 async def get_customer_tool(args: dict[str, Any]) -> dict[str, Any]:
-    result = get_customer(args["identifier"])
+    result = get_customer(args["email"], args["customer_id"])
     return {"content": [{"type": "text", "text": _to_json(result)}]}
 
 

@@ -19,13 +19,18 @@ CUSTOMERS: list[dict] = _load("customers.json")
 ORDERS: list[dict] = _load("orders.json")
 
 
-def find_customer(identifier: str) -> dict | None:
-    """Looks up a customer by customer_id or email (case-insensitive)."""
-    identifier = identifier.strip().lower()
+def find_customer(email: str, customer_id: str) -> dict | None:
+    """Looks up a customer only when both email and customer_id
+    (case-insensitive) match the same record. Either one alone is not
+    enough to verify identity — see support_bot/tools.py get_customer.
+    """
+    email = email.strip().lower()
+    customer_id = customer_id.strip().lower()
     for customer in CUSTOMERS:
-        if customer["customer_id"].lower() == identifier:
-            return customer
-        if customer["email"].lower() == identifier:
+        if (
+            customer["customer_id"].lower() == customer_id
+            and customer["email"].lower() == email
+        ):
             return customer
     return None
 
