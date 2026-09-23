@@ -24,7 +24,7 @@ from typing import Any
 
 from claude_agent_sdk import HookContext, HookMatcher
 
-REFUND_AMOUNT_LIMIT = 200
+from support_bot.tools import REFUND_AMOUNT_LIMIT
 
 GET_CUSTOMER_TOOL = "mcp__support_bot__get_customer"
 PROCESS_REFUND_TOOL = "mcp__support_bot__process_refund"

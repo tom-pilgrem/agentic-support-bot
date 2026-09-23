@@ -8,14 +8,31 @@ up the SDK.
 
 Descriptions on get_customer and lookup_order are deliberately thin — that's
 the Stage 2 "before" state from PROJECT_BRIEF.md, not an oversight.
+
+Stage 4 adds two more error cases on top of the validation/permission ones
+from earlier stages: a randomly-simulated transient backend timeout on the
+two lookups, and a business-rule error in process_refund for amounts over
+policy. See _simulate_transient_failure and the amount check inside
+process_refund.
 """
 
 import json
+import random
 from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from support_bot import data
+
+REFUND_AMOUNT_LIMIT = 200
+"""Single source of truth for the refund policy limit. hooks.py's
+PreToolUse enforcement imports this same constant rather than hardcoding
+its own copy, so the two can't drift apart."""
+
+TRANSIENT_ERROR_RATE = 0.15
+"""Chance that any single get_customer/lookup_order call simulates a
+flaky backend, per PROJECT_BRIEF.md Stage 4. Deliberately not tied to any
+specific mock data row — a real timeout can happen on any request."""
 
 
 def _error(error_category: str, is_retryable: bool, message: str) -> dict[str, Any]:
@@ -29,10 +46,27 @@ def _error(error_category: str, is_retryable: bool, message: str) -> dict[str, A
     }
 
 
+def _simulate_transient_failure() -> dict[str, Any] | None:
+    """Randomly simulates a backend service timeout. Returns a
+    transient/retryable error some of the time, None the rest — transient
+    is the only category where retrying the exact same call, unchanged,
+    is ever the right move.
+    """
+    if random.random() < TRANSIENT_ERROR_RATE:
+        return _error(
+            "transient",
+            True,
+            "The backend service timed out. Please try again.",
+        )
+    return None
+
+
 # --- Plain functions (the actual business logic) ---------------------------
 
 
 def get_customer(identifier: str) -> dict[str, Any]:
+    if (timeout := _simulate_transient_failure()) is not None:
+        return timeout
     customer = data.find_customer(identifier)
     if customer is None:
         return _error(
@@ -44,6 +78,8 @@ def get_customer(identifier: str) -> dict[str, Any]:
 
 
 def lookup_order(order_id: str, customer_id: str) -> dict[str, Any]:
+    if (timeout := _simulate_transient_failure()) is not None:
+        return timeout
     order = data.find_order(order_id)
     if order is None:
         return _error(
@@ -76,9 +112,19 @@ def process_refund(
             False,
             f"Order '{order_id}' does not belong to customer '{customer_id}'.",
         )
-    # No business-rule enforcement here (e.g. refund amount limits, prior
-    # verification). Per CLAUDE.md, that's enforced by hooks (Stage 3), not
-    # inside the tool itself.
+    # Verification (was get_customer called first?) is still enforced only
+    # by the Stage 3 hook, per CLAUDE.md — nothing here checks it. The
+    # amount limit is different: the hook already blocks an over-limit call
+    # before this function ever runs, but this check stays as a defense in
+    # depth backstop (Stage 4's business-error case) for any path that
+    # reaches this function without going through that hook.
+    if amount > REFUND_AMOUNT_LIMIT:
+        return _error(
+            "business",
+            False,
+            f"Refunds over ${REFUND_AMOUNT_LIMIT} need manager approval and "
+            "can't be auto-processed.",
+        )
     return {
         "refund_id": f"REF-{order_id}",
         "order_id": order_id,
