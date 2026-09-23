@@ -18,6 +18,7 @@ process_refund.
 
 import json
 import random
+from datetime import date, timedelta
 from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
@@ -25,6 +26,13 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 from support_bot import data
 
 REFUND_AMOUNT_LIMIT = 200
+
+RETURN_WINDOW_DAYS = 30
+
+MOCK_TODAY = date(2026, 9, 23)
+"""The mock backend's "today". Fixed rather than date.today() so
+return-window tests give the same answer whenever they're run (ORD-1001
+was delivered 2026-09-10 and would otherwise age out of the window)."""
 """Single source of truth for the refund policy limit. hooks.py's
 PreToolUse enforcement imports this same constant rather than hardcoding
 its own copy, so the two can't drift apart."""
@@ -33,6 +41,17 @@ TRANSIENT_ERROR_RATE = 0.15
 """Chance that any single get_customer/lookup_order call simulates a
 flaky backend, per PROJECT_BRIEF.md Stage 4. Deliberately not tied to any
 specific mock data row — a real timeout can happen on any request."""
+
+
+TEST_ANNOTATION_FIELDS = {"notes", "note"}
+"""Fields in mock_data/*.json that are notes to *us* about what each record
+is for (e.g. "straightforward resolve, do not escalate"). They are not
+part of what a real backend would return, and leaving them in would hand
+the model the expected answer to every test case."""
+
+
+def _without_test_annotations(record: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in record.items() if k not in TEST_ANNOTATION_FIELDS}
 
 
 def _error(error_category: str, is_retryable: bool, message: str) -> dict[str, Any]:
@@ -75,7 +94,7 @@ def get_customer(email: str, customer_id: str) -> dict[str, Any]:
             "That email and customer ID don't match the same account on "
             "file — please double-check both.",
         )
-    return customer
+    return _without_test_annotations(customer)
 
 
 def lookup_order(order_id: str, customer_id: str) -> dict[str, Any]:
@@ -94,7 +113,36 @@ def lookup_order(order_id: str, customer_id: str) -> dict[str, Any]:
             False,
             f"Order '{order_id}' does not belong to customer '{customer_id}'.",
         )
-    return order
+    return _with_return_window(_without_test_annotations(order))
+
+
+def return_window_deadline(delivered_date: str) -> date:
+    """The last day an order delivered on `delivered_date` can be refunded."""
+    return date.fromisoformat(delivered_date) + timedelta(days=RETURN_WINDOW_DAYS)
+
+
+def is_within_return_window(order: dict[str, Any]) -> bool:
+    """The single definition of the return-window rule, used both by
+    lookup_order (to tell the model) and by the Stage 6 hook (to enforce
+    it). An order that hasn't been delivered yet has no window open."""
+    if order.get("delivered_date") is None:
+        return False
+    return MOCK_TODAY <= return_window_deadline(order["delivered_date"])
+
+
+def _with_return_window(order: dict[str, Any]) -> dict[str, Any]:
+    """Add the return-window facts the refund policy depends on, computed
+    here rather than left to the model: in Stage 6 testing the model read
+    a delivery 34 days ago as "within the 30-day window". Date arithmetic
+    is the backend's job; applying the policy to the result is the model's."""
+    if order.get("delivered_date") is None:
+        return {**order, "days_since_delivery": None, "within_return_window": False}
+    days = (MOCK_TODAY - date.fromisoformat(order["delivered_date"])).days
+    return {
+        **order,
+        "days_since_delivery": days,
+        "within_return_window": is_within_return_window(order),
+    }
 
 
 def process_refund(
@@ -200,7 +248,10 @@ async def get_customer_tool(args: dict[str, Any]) -> dict[str, Any]:
     "belongs to that customer. The status field is either 'in_transit' "
     "(already shipped, on its way, just not yet delivered) or 'delivered' "
     "(received by the customer) — when explaining 'in_transit' to a "
-    "customer, say the order has shipped, not that it hasn't. Example "
+    "customer, say the order has shipped, not that it hasn't. For "
+    "delivered orders, days_since_delivery and within_return_window are "
+    "computed for you — use them rather than working out dates yourself. "
+    "Example "
     "queries: 'what's the status of "
     "order ORD-1002?', 'has my order shipped yet?', 'can I return "
     "ORD-1005?'. If the order doesn't exist, or exists but belongs to a "

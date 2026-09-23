@@ -36,7 +36,20 @@ login. A claude.ai login makes the bundled CLI inject the account email
 into every session, and the agent treated it as the customer's. The
 model is pinned to claude-sonnet-5 (MODEL in agent.py).
 
-Stage 6 (escalation calibration) not yet started.
+Stage 6 complete. SYSTEM_PROMPT (agent.py) is now BASE_INSTRUCTIONS +
+RETURN_POLICY + ESCALATION_CRITERIA: a complete stated refund policy,
+explicit escalate / don't-escalate criteria (sentiment is not a
+trigger), and three few-shots. The angry-customer case is deliberately
+not a few-shot. Tools strip the mock data's notes/note fields
+(TEST_ANNOTATION_FIELDS), because they were leaking expected answers.
+lookup_order computes days_since_delivery / within_return_window from
+MOCK_TODAY and RETURN_WINDOW_DAYS (both in tools.py). Confirmed 11/11 on
+the four scenarios. The return window is also enforced by a third
+PreToolUse hook on process_refund (_enforce_return_window in hooks.py,
+using tools.is_within_return_window), so it no longer relies on the
+prompt. Full writeup in NOTES.md.
+
+Stage 7 (multi-concern decomposition) not yet started.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping
