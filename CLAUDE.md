@@ -21,14 +21,16 @@ escalation logic before the bare agentic loop is working and tested.
   clarity matters more than reusability.
 
 ## Current stage
-Stage 3 complete. Two hooks in support_bot/hooks.py (RefundEnforcement)
-block process_refund: unless get_customer already verified the customer_id
-this session, and unconditionally above the $200 policy limit. Both
-confirmed working end-to-end, including a real prove-it-matters comparison
-against prompt-only enforcement. Found and fixed a hook wire-format bug
-along the way (PostToolUse tool_response is the bare content-block list,
-not the dict our tool wrapper returns). Full writeup in NOTES.md. Stage 4
-(structured errors) not yet started.
+Stage 4 complete. tools.py now returns two more structured error
+categories on top of validation/permission: transient (randomly-simulated
+backend timeout on get_customer/lookup_order, 15% chance, isRetryable
+true) and business (refund over the $200 limit, isRetryable false — a
+defense-in-depth backstop, since the Stage 3 hook already blocks that
+case before this code runs in normal operation). REFUND_AMOUNT_LIMIT now
+lives in tools.py as the single source of truth; hooks.py imports it.
+SYSTEM_PROMPT tells the model to retry once on isRetryable true, never
+otherwise. Confirmed end-to-end per category. Full writeup in NOTES.md.
+Stage 5 (escalation calibration) not yet started.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping
