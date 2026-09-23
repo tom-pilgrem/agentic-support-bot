@@ -328,3 +328,51 @@ per-conversation one.
 **Brief deviation:** the brief's test says to reply with "just the
 customer ID". Since the two-factor change, verification needs both
 email and customer_id, so the reply includes both.
+
+## Stage 5 — found while testing: the developer's email leaked into the agent
+
+**Symptom:** asked "I need to check on the status of my order" with no
+identifiers, the agent replied "I have your email on file as
+tom.pilgrem@theinformationlab.ie" — my own work email, which isn't in
+the mock data and was never typed in the conversation.
+
+**Cause:** not our code. The Agent SDK drives the bundled Claude Code
+CLI, and when that CLI is signed in with a claude.ai account it adds
+the account's email to every session's context ("The user's email
+address is …"). Our `system_prompt` replaces the CLI's default system
+prompt, and `setting_sources=[]` stops CLAUDE.md/settings loading, but
+neither touches this line. So the agent believed "the user" was the
+developer, and treated that email as the customer's. Found by reading
+the bundled CLI: the email is only added when it's authenticated via
+claude.ai OAuth, not via an API key.
+
+**Worth noticing:** `SYSTEM_PROMPT` already said never to mention or
+suggest an email the customer didn't type, and the model broke that
+rule anyway. It's the same lesson as Stage 3, arrived at by accident:
+a prompt-only rule is a request, not a guarantee.
+
+**Fix:** remove the leak at the source instead of asking the model to
+ignore it.
+- The bot now runs on an Anthropic API key. `main()` refuses to start
+  without `ANTHROPIC_API_KEY` and explains why.
+- The key can live in a gitignored `.env` file (`python-dotenv`,
+  loaded in `main()`); a key exported in the shell takes priority.
+- Each turn logs `[auth] apiKeySource=…` from the CLI's init message,
+  so it's visible which credential was actually used.
+
+**Also changed: model pinned to `claude-sonnet-5`.** Before this, the
+agent used whatever default the CLI picked. Sonnet 5 is enough for a
+four-tool, short-conversation loop, especially since the rules that
+matter are enforced by hooks rather than the model's judgment. It's a
+one-line change (`MODEL` in `agent.py`) if that ever proves wrong.
+Note that Stages 1–4 were tested on the old default model.
+
+**Confirmed working (manual run):** with the key in `.env`, the same
+prompt logged `apiKeySource=ANTHROPIC_API_KEY`, and the agent asked for
+email and customer ID without suggesting any address.
+
+**Not done (possible follow-up):** a `PreToolUse` hook on
+`get_customer` that denies the call unless both identifiers appear in
+the customer's own messages. That would stop the agent *using* an
+injected or guessed identifier (though not *mentioning* one), and would
+also protect against other sources of injected context.

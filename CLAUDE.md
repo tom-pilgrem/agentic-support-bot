@@ -30,6 +30,12 @@ conversation but not into a new one. main.py takes an optional first
 message on argv, then reads further messages from stdin until
 quit/exit/EOF. Confirmed end-to-end; full writeup in NOTES.md.
 
+Also in Stage 5: the bot must run on an Anthropic API key
+(ANTHROPIC_API_KEY, exported or in a gitignored .env), never a claude.ai
+login. A claude.ai login makes the bundled CLI inject the account email
+into every session, and the agent treated it as the customer's. The
+model is pinned to claude-sonnet-5 (MODEL in agent.py).
+
 Stage 6 (escalation calibration) not yet started.
 
 ## Do not
