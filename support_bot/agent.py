@@ -83,7 +83,7 @@ class AgentResult:
 
 EXIT_COMMANDS = {"quit", "exit"}
 
-MODEL = "claude-opus-5"
+MODEL = "claude-sonnet-5"
 
 # Why an API key is required rather than just recommended: when the
 # bundled Claude Code CLI is signed in via a claude.ai account instead, it
