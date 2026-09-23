@@ -44,7 +44,10 @@ not a few-shot. Tools strip the mock data's notes/note fields
 (TEST_ANNOTATION_FIELDS), because they were leaking expected answers.
 lookup_order computes days_since_delivery / within_return_window from
 MOCK_TODAY and RETURN_WINDOW_DAYS (both in tools.py). Confirmed 11/11 on
-the four scenarios; full writeup in NOTES.md.
+the four scenarios. The return window is also enforced by a third
+PreToolUse hook on process_refund (_enforce_return_window in hooks.py,
+using tools.is_within_return_window), so it no longer relies on the
+prompt. Full writeup in NOTES.md.
 
 Stage 7 (multi-concern decomposition) not yet started.
 
