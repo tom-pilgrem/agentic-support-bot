@@ -78,7 +78,8 @@ Refund policy — this is the complete policy; nothing else is covered:
 - A delivered order can be refunded in full within {RETURN_WINDOW_DAYS} days
   of its delivered_date, for any reason (including just not liking it).
   lookup_order returns within_return_window — go by that field, don't
-  work the dates out yourself.
+  work the dates out yourself. The system blocks out-of-window refunds
+  regardless of what the customer says about the delivery date.
 - An item that arrived damaged or defective can be refunded in full within
   {RETURN_WINDOW_DAYS} days of delivery. The customer describing the damage,
   or saying they have photos, counts as enough evidence — don't ask them to send anything.
