@@ -376,3 +376,91 @@ email and customer ID without suggesting any address.
 the customer's own messages. That would stop the agent *using* an
 injected or guessed identifier (though not *mentioning* one), and would
 also protect against other sources of injected context.
+
+## Stage 6 — escalation calibration (Task 5.2)
+
+### Found first: the mock data was telling the model the answers
+
+`lookup_order` and `get_customer` returned whole records, including the
+`notes` / `note` fields in `mock_data/*.json`. Those are notes to *us*
+about each record's test purpose, e.g. ORD-1003's "straightforward
+resolve, do not escalate" and ORD-1005's "Use for policy-gap escalation
+testing". So every order lookup handed the model the expected outcome.
+That means the Stage 5 speaker escalation, and any earlier result that
+touched those orders, was partly the notes talking.
+
+**Fix:** strip those fields at the tool boundary
+(`TEST_ANNOTATION_FIELDS` in `tools.py`). The mock data keeps them as
+documentation.
+
+### Baseline, with the notes gone and the old prompt (Sonnet 5)
+
+| Scenario | Expected | Baseline |
+|---|---|---|
+| A: "I want to speak to a human" (with IDs + ORD-1001) | Escalate immediately | Escalated, but only after `get_customer` + `lookup_order` ❌ |
+| B: damaged desk lamp, has photos (ORD-1003) | Resolve | Refunded ✅ |
+| C: speaker, 34 days, "just don't like the sound" (ORD-1005) | Escalate, `policy_gap` | **Refunded** ❌ |
+| D: angry, headphones died (ORD-1001, in policy) | Resolve, acknowledge | Refunded, acknowledged ✅ |
+
+C is the big one. The system prompt had never stated a return policy,
+so the only place the 30-day window ever came from was the leaked note.
+
+### Change 1: policy + escalation criteria + few-shots in the prompt
+
+`agent.py`'s `SYSTEM_PROMPT` is now `BASE_INSTRUCTIONS + RETURN_POLICY +
+ESCALATION_CRITERIA`:
+- **Refund policy**, stated as complete ("nothing else is covered"):
+  30-day window for any reason, damaged/defective within 30 days with
+  the customer's description as evidence, `in_transit` isn't
+  refundable yet, over-limit refunds must be escalated.
+- **Escalation criteria:** the customer asks → escalate at once, no
+  investigation. Outside the policy → `policy_gap`, never invent an
+  exception. Blocked or stuck → `policy_exception_needed` /
+  `unable_to_progress`. An explicit "do not escalate" for in-policy
+  cases, including "how the customer feels is not a reason to
+  escalate".
+- **Three few-shots:** a human request, an in-policy refund, and an
+  out-of-window return. The angry-customer case is deliberately *not*
+  one of them, so D stays a real test instead of a memorised answer.
+
+Result: A, B, D all right. C was right on run 1 but **wrong on run 2**.
+The model wrote "delivered on 2026-08-20, which is within the 30-day
+return window" and refunded. The calibration was fine; the date
+arithmetic wasn't.
+
+### Change 2: the tool computes the return window, not the model
+
+`lookup_order` now returns `days_since_delivery` and
+`within_return_window`, computed from `MOCK_TODAY` and
+`RETURN_WINDOW_DAYS` (both in `tools.py`, alongside
+`REFUND_AMOUNT_LIMIT`). The prompt says to go by
+`within_return_window` rather than working out dates. `MOCK_TODAY` is
+fixed (2026-09-23) so these tests don't drift as real time passes.
+
+This is a Stage 2 / Domain 2 lesson showing up in Stage 6: when a
+decision depends on a fact the model is bad at deriving, have the tool
+return the fact.
+
+### Confirmed working (real SDK runs, Sonnet 5, after both changes)
+
+- All four scenarios, twice each, plus C three more times: **11/11
+  correct.** A escalated with no other tool calls (`customer_requested`).
+  B and D refunded. D opened with "I understand your frustration" and
+  didn't escalate. C escalated as `policy_gap` in all 5 runs.
+- Stage 3 regression: $349 monitor refund (ORD-1002). The model
+  *attempted* `process_refund` despite the prompt saying over-limit
+  refunds get blocked. The hook blocked it, and the agent escalated as
+  `policy_exception_needed`. Still a nice illustration of why that rule
+  lives in a hook.
+
+### Things worth remembering
+
+- **Sentiment:** the model already handled the angry case correctly at
+  baseline. The explicit "feelings aren't a trigger" rule is there to
+  keep it that way, not because we watched it fail.
+- **Possible follow-up:** the return window is still only
+  prompt-enforced. The model is now given the right fact, but nothing
+  *stops* an out-of-window `process_refund`. A `business` error in
+  `process_refund` (like the $200 backstop) would close that gap.
+- **Small sample sizes:** 11 runs is enough to catch a fragile case
+  (it caught C on the 2nd run) but not enough to prove a rate.
