@@ -22,6 +22,7 @@ stream, and reports what happened.
 """
 
 import asyncio
+import os
 import sys
 
 from claude_agent_sdk import (
@@ -29,6 +30,7 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ResultMessage,
+    SystemMessage,
     TextBlock,
     ToolUseBlock,
 )
@@ -81,9 +83,26 @@ class AgentResult:
 
 EXIT_COMMANDS = {"quit", "exit"}
 
+MODEL = "claude-opus-5"
+
+# Why an API key is required rather than just recommended: when the
+# bundled Claude Code CLI is signed in via a claude.ai account instead, it
+# injects that account's email into every session ("The user's email
+# address is ..."). The support agent then treats the *developer's* email
+# as the customer's and offers it up unprompted, which no system-prompt
+# rule reliably stops (see NOTES.md). With API-key auth there's no
+# account, so nothing gets injected.
+MISSING_API_KEY_MESSAGE = (
+    "ANTHROPIC_API_KEY is not set. This bot must run on an API key, not a "
+    "claude.ai login: a claude.ai login makes the CLI inject your account "
+    "email into the conversation, which the agent then treats as the "
+    "customer's. Export ANTHROPIC_API_KEY and try again."
+)
+
 
 def build_options(enforcement: RefundEnforcement) -> ClaudeAgentOptions:
     return ClaudeAgentOptions(
+        model=MODEL,
         tools=[],  # no built-in tools (Bash, Read, ...) — only our four
         mcp_servers={"support_bot": SUPPORT_BOT_TOOLS},
         allowed_tools=ALLOWED_TOOLS,
@@ -106,6 +125,11 @@ async def run_turn(client: ClaudeSDKClient, message: str) -> AgentResult:
     # ResultMessage. Unlike query()'s stream, it does NOT end the session —
     # the client stays connected and ready for the next customer message.
     async for event in client.receive_response():
+        if isinstance(event, SystemMessage) and event.subtype == "init":
+            # Confirms which credential the CLI actually used — should be
+            # ANTHROPIC_API_KEY, never a claude.ai login (see MISSING_API_KEY_MESSAGE).
+            print(f"  [auth] apiKeySource={event.data.get('apiKeySource')}")
+
         if isinstance(event, AssistantMessage):
             for block in event.content:
                 if isinstance(block, ToolUseBlock):
@@ -180,6 +204,9 @@ async def run_conversation(first_message: str | None) -> None:
 def main() -> None:
     # An optional first message can be passed on the command line; after
     # that the conversation continues interactively on stdin.
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        sys.exit(MISSING_API_KEY_MESSAGE)
+
     first_message = " ".join(sys.argv[1:]) or None
     print("Customer support chat — type 'quit' to end the conversation.")
     asyncio.run(run_conversation(first_message))
