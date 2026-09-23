@@ -21,21 +21,16 @@ escalation logic before the bare agentic loop is working and tested.
   clarity matters more than reusability.
 
 ## Current stage
-Stage 4 complete. tools.py now returns two more structured error
-categories on top of validation/permission: transient (randomly-simulated
-backend timeout on get_customer/lookup_order, 15% chance, isRetryable
-true) and business (refund over the $200 limit, isRetryable false — a
-defense-in-depth backstop, since the Stage 3 hook already blocks that
-case before this code runs in normal operation). REFUND_AMOUNT_LIMIT now
-lives in tools.py as the single source of truth; hooks.py imports it.
-SYSTEM_PROMPT tells the model to retry once on isRetryable true, never
-otherwise. Confirmed end-to-end per category. Full writeup in NOTES.md.
+Stage 5 complete. agent.py now runs a multi-turn conversation on
+ClaudeSDKClient (connect once, then client.query() +
+receive_response() per customer message) instead of one-shot query().
+Each turn still ends on stop_reason only. RefundEnforcement is created
+once per conversation, so verification carries across turns within a
+conversation but not into a new one. main.py takes an optional first
+message on argv, then reads further messages from stdin until
+quit/exit/EOF. Confirmed end-to-end; full writeup in NOTES.md.
 
-PROJECT_BRIEF.md's staging was revised: a new Stage 5 (multi-turn
-conversation loop, Task 1.7 — swap the one-shot query() call for the
-SDK's stateful ClaudeSDKClient) was inserted after Stage 4. Escalation
-calibration is now Stage 6, multi-concern decomposition is now Stage 7.
-Stage 5 (multi-turn conversation loop) not yet started.
+Stage 6 (escalation calibration) not yet started.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping

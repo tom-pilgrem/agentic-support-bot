@@ -277,3 +277,54 @@ from noticing the mock data's own stated intent ("for testing
 ambiguous-match handling") couldn't actually be reached by the code as
 written — a mismatch between what the test data claimed to cover and
 what the implementation could actually be tested against.
+
+## Stage 5 — multi-turn conversation loop (Task 1.7)
+
+**The problem:** `query()` is one-shot and stateless. Every `main.py`
+run was a new session, so if the agent asked "what's your customer
+ID?", the customer's answer went to a brand new agent that had never
+seen the original question.
+
+**Changed:** `agent.py` now uses `ClaudeSDKClient`. It connects once
+(`async with ClaudeSDKClient(...)`), and then for each customer message:
+`client.query(message)` followed by `client.receive_response()`. The
+key difference from `query()`'s stream: `receive_response()` stops
+after the turn's `ResultMessage` but leaves the session connected, so
+the next message goes into the same conversation with full history.
+The loop is still controlled by `stop_reason` only; each turn is just
+the Stage 1 loop repeated inside one live session.
+
+**A subtle consequence for the Stage 3 hook:** the hook's state
+(`RefundEnforcement.verified_customer_ids`) used to be created per
+`run_agent()` call, which was the same as per session. Now there are
+many messages per session, so that instance has to live for the whole
+conversation (it's created once in `run_conversation()`). If it had
+stayed per message, a customer verified on turn 1 would get blocked
+from a refund on turn 2, which is the wrong behaviour. It's also a
+reminder that hook state is *our* code's state, not the model's:
+the SDK carrying message history across turns doesn't carry our
+Python-side state for us.
+
+`max_turns=10` is now a per-message safety ceiling, not a
+per-conversation one.
+
+**Confirmed working (real SDK runs, input piped on stdin):**
+- The brief's speaker scenario: "I ordered a bluetooth speaker…
+  haven't received it" → agent asked for ID + email. Reply with just
+  "CUST-002, marcus.webb@example.com" → verified, didn't re-ask, and
+  asked for the order ID (no tool can look up orders by item). Reply
+  "It was ORD-1005" → looked it up, saw it was delivered 33 days ago
+  (outside the window, policy silent), and escalated as `policy_gap`.
+  It remembered the original complaint throughout. This run also hit a
+  simulated transient timeout and retried once, per Stage 4.
+- Hook state across turns: verified CUST-001 on turn 1 (loyalty
+  question), asked for a refund of ORD-1001 on turn 2 → processed
+  without re-verifying and without being blocked.
+- No leakage across conversations: a new process claiming "I was
+  verified in my last chat" was asked to verify again. (The model
+  complied on its own, so the hook didn't need to fire. Stage 3
+  already showed it fires when the model doesn't comply.)
+
+**Brief deviation:** the brief's test says to reply with "just the
+customer ID". Since the two-factor change, verification needs both
+email and customer_id, so the reply includes both.
