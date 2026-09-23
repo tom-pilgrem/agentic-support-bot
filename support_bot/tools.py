@@ -35,6 +35,17 @@ flaky backend, per PROJECT_BRIEF.md Stage 4. Deliberately not tied to any
 specific mock data row — a real timeout can happen on any request."""
 
 
+TEST_ANNOTATION_FIELDS = {"notes", "note"}
+"""Fields in mock_data/*.json that are notes to *us* about what each record
+is for (e.g. "straightforward resolve, do not escalate"). They are not
+part of what a real backend would return, and leaving them in would hand
+the model the expected answer to every test case."""
+
+
+def _without_test_annotations(record: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in record.items() if k not in TEST_ANNOTATION_FIELDS}
+
+
 def _error(error_category: str, is_retryable: bool, message: str) -> dict[str, Any]:
     """Structured error shape used by every tool (see CLAUDE.md conventions)."""
     return {
@@ -75,7 +86,7 @@ def get_customer(email: str, customer_id: str) -> dict[str, Any]:
             "That email and customer ID don't match the same account on "
             "file — please double-check both.",
         )
-    return customer
+    return _without_test_annotations(customer)
 
 
 def lookup_order(order_id: str, customer_id: str) -> dict[str, Any]:
@@ -94,7 +105,7 @@ def lookup_order(order_id: str, customer_id: str) -> dict[str, Any]:
             False,
             f"Order '{order_id}' does not belong to customer '{customer_id}'.",
         )
-    return order
+    return _without_test_annotations(order)
 
 
 def process_refund(
