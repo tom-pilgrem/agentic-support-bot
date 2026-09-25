@@ -502,3 +502,115 @@ Out-of-window denials redirect to `escalate_to_human` with
   affect the hook result.)
 - **Regression:** all four scenarios still correct afterwards, on the
   API key.
+
+## Stage 7 — multi-concern decomposition (Task 1.4)
+
+### Scenarios
+
+One message, several unrelated requests, all with both identifiers given:
+
+| | Message bundles | Expected |
+|---|---|---|
+| S1 | ORD-1004 "never arrived" + "update my email" | Status (in transit) + escalate the email change (`policy_gap`, no tool for it) |
+| S2 | Damaged lamp ORD-1003 + where's ORD-1004 | Refund + status |
+| S3 | Return ORD-1001 ($89.99) + ORD-1002 ($349) | Refund one; the other hook-blocked → escalate |
+| S4 | ORD-1004 status + damaged lamp + speaker ORD-1005 (34 days) | Status + refund + escalate (`policy_gap`), with the last request mentioned in passing |
+| S5 | Headphones issue + "I want a human" | Stage 6 regression: escalate at once, no verification |
+
+### Baseline: the model already decomposes well (Sonnet 5)
+
+S1–S4, two runs each, old prompt: **8/8 handled every request.** One
+`get_customer` per run (other than retries after the simulated
+timeout), every order looked up, each request resolved on its own
+terms, one closing reply. Like the angry customer in Stage 6, the
+thing the brief warns about ("only handling the first thing it
+notices") didn't happen.
+
+But the logs showed a weak spot in *delivery*, not reasoning. The
+customer's reply was `ResultMessage.result`, which is only the
+**last** text block of the turn. In 5 of 8 runs the model wrote its
+answer in two parts: a "here's what I found" block, more tool calls,
+then a closing block. All 8 were fine only because the model happened
+to repeat everything in that last block.
+
+### Change 1 (prompt only): "your final message must cover everything"
+
+I added `MULTI_CONCERN_HANDLING` to the system prompt: list every
+request before calling tools, verify once and reuse it, handle each
+request independently, and "only your final message is shown to the
+customer, so it must cover every request".
+
+In run 1 of S4 it **broke anyway.** The model wrote the full
+three-part answer, made one more tool call (the speaker escalation),
+then ended with "That escalation has been submitted (ref: ESC-39691)…".
+That line was the entire reply the customer saw. The espresso machine
+status and the $24.50 lamp refund were silently dropped, even though
+the refund really was processed.
+
+### Change 2 (code): show the customer the whole turn
+
+`run_turn` now collects every `TextBlock` in the turn and shows them
+all, in order, instead of `ResultMessage.result`. The prompt rule was
+changed to describe that ("everything you write is shown in order;
+don't repeat a summary"). Whether the turn is over is still decided
+by `stop_reason` alone; the collected text only decides what's
+displayed.
+
+This is the Stage 3 lesson again, from a different angle. "The
+customer must get the answer to every request" has to hold every
+time, and a prompt rule only makes it likely. It's cheap to guarantee
+in code, so it belongs in code.
+
+**Trade-off:** sometimes the model still writes a closing "To
+summarize…" that repeats the earlier text (3 of 11 runs), so the
+customer sees some things twice. That's much better than losing an
+answer. Deduplicating reliably would mean parsing the model's text,
+which isn't worth it here.
+
+### A real multi-concern failure: one escalation covering two requests
+
+After Change 2 (11 runs, all concerns visible), S4 run 1 got an
+unlucky double timeout on `lookup_order ORD-1003`. That meant two
+requests needed a human: the lamp (`unable_to_progress`) and the
+speaker (`policy_gap`). The agent made **one** escalation, for the
+lamp only. The speaker was refused ("I'm not able to process a
+refund") and never handed off. This is exactly the brief's failure
+mode, just showing up at the escalation step.
+
+- **Reproducing it:** a throwaway script patched `lookup_order` so
+  ORD-1003 always times out (random timeouts off). The old prompt
+  escalated both correctly **4/4**, so it doesn't reproduce on demand.
+- **Fix (prompt):** "escalating one request doesn't cover the others:
+  every request that needs a human must be in an escalate_to_human
+  summary." Forced-timeout runs afterwards: **3/3** escalated both.
+  Given 4/4 before, that shows the rule does no harm, not that it
+  helps. It's there because the prompt never said it and we saw it go
+  wrong once, the same reasoning as the Stage 6 sentiment rule.
+- **Why not a hook?** A hook would need to know which requests are
+  in the message, and only the model knows that. Hooks can enforce
+  rules about tool calls, like "no refund without verification", but
+  not "did you notice every request".
+
+### Final results (Sonnet 5, both changes)
+
+- S1–S5 (S4 ×3): **11/11** with every request's outcome in the reply
+  the customer sees.
+- Forced lamp timeout on S4: 3/3 escalated both.
+- S3/S4 regression after the last prompt tweak: 4/4.
+- S5 (Stage 6 regression): escalated immediately with no
+  `get_customer`, in all 4 runs across both prompt versions.
+- S3 also showed the Stage 3 hook doing its job in a bundled message:
+  the model usually *tried* the $349 refund, the hook blocked it, and
+  the $89.99 refund in the same turn went through normally.
+
+### Things worth remembering
+
+- **Check what the customer actually sees, not what the model
+  wrote.** The `[assistant text]` debug lines looked perfect. The
+  bug was only visible by comparing them with the `agent>` line.
+- **Multi-concern answers make split replies more likely**: more
+  tool calls means more chances to write text between them. A
+  "final answer = last block" assumption that worked in single-concern
+  stages breaks here.
+- **Small samples again:** both failures were 1-in-several events.
+  Two runs per scenario would easily have missed them.

@@ -131,7 +131,29 @@ reason='policy_gap'. Wrong: refunding it anyway, or refusing outright
 without escalating.
 """
 
-SYSTEM_PROMPT = BASE_INSTRUCTIONS + RETURN_POLICY + ESCALATION_CRITERIA
+# Stage 7: one message can bundle several unrelated requests. The model
+# already decomposed these correctly at baseline (see NOTES.md); this
+# section is mostly there to keep it that way. Making sure the customer
+# actually *sees* every answer is not left to the prompt: run_turn shows
+# them all of the turn's text, not just the last block. The last rule here
+# just tells the model that, so it doesn't repeat itself.
+MULTI_CONCERN_HANDLING = """
+When one message contains more than one request:
+- Before calling any tools, identify every separate request in the
+  message, including any mentioned in passing at the end.
+- Verify the customer once and reuse that result for every request. Don't
+  call get_customer again unless a call failed.
+- Handle each request on its own terms. One request being blocked,
+  escalated or outside the policy doesn't stop you resolving the others.
+  Likewise, escalating one request doesn't cover the others: every request
+  that needs a human must be in an escalate_to_human summary.
+- Everything you write during a turn, including text between tool calls,
+  is shown to the customer in order as one reply. Make sure every request
+  and its outcome is covered somewhere in it, and don't repeat a summary
+  you've already written.
+"""
+
+SYSTEM_PROMPT = BASE_INSTRUCTIONS + RETURN_POLICY + ESCALATION_CRITERIA + MULTI_CONCERN_HANDLING
 
 ALLOWED_TOOLS = [
     "mcp__support_bot__get_customer",
@@ -190,6 +212,12 @@ async def run_turn(client: ClaudeSDKClient, message: str) -> AgentResult:
     await client.query(message)
 
     tool_calls: list[str] = []
+    # Every text block the agent writes this turn. The customer is shown
+    # all of them, not just ResultMessage.result — that's only the *last*
+    # block, and in Stage 7 testing the agent wrote a full multi-part
+    # answer, made one more tool call, then ended with a one-line closer.
+    # Showing only the closer silently dropped two of three answers.
+    texts: list[str] = []
     result: ResultMessage | None = None
 
     # receive_response() yields this turn's messages and stops after the
@@ -207,6 +235,7 @@ async def run_turn(client: ClaudeSDKClient, message: str) -> AgentResult:
                     tool_calls.append(block.name)
                     print(f"  [tool_use] {block.name}({block.input})")
                 elif isinstance(block, TextBlock) and block.text:
+                    texts.append(block.text)
                     print(f"  [assistant text] {block.text}")
 
         if isinstance(event, ResultMessage):
@@ -223,8 +252,11 @@ async def run_turn(client: ClaudeSDKClient, message: str) -> AgentResult:
         raise RuntimeError("Agent SDK stream ended without a ResultMessage")
 
     print(f"  [stop_reason] {result.stop_reason} (is_error={result.is_error})")
+    # Whether the turn succeeded is still decided by stop_reason alone; the
+    # collected text only decides what the customer sees.
     if result.stop_reason == "end_turn" and not result.is_error:
-        return AgentResult(result.stop_reason, result.result, tool_calls)
+        reply = "\n\n".join(texts) or None
+        return AgentResult(result.stop_reason, reply, tool_calls)
     return AgentResult(result.stop_reason, None, tool_calls)
 
 

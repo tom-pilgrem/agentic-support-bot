@@ -49,7 +49,13 @@ PreToolUse hook on process_refund (_enforce_return_window in hooks.py,
 using tools.is_within_return_window), so it no longer relies on the
 prompt. Full writeup in NOTES.md.
 
-Stage 7 (multi-concern decomposition) not yet started.
+Stage 7 complete. The system prompt now also includes MULTI_CONCERN_HANDLING
+(list every request, verify once, handle each independently, every
+request needing a human must be escalated). run_turn shows the customer
+every text block of the turn, not just ResultMessage.result (the last
+block), which had silently dropped answers in a bundled message. Turn
+end is still decided by stop_reason only. Full writeup in NOTES.md.
+Only the optional stretch goals remain.
 
 ## Do not
 - Do not implement loop termination by checking for assistant text content or capping
