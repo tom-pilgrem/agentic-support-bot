@@ -122,6 +122,71 @@ several stages is to *watch something fail* first, then fix it — that's what w
 - Log a structured handoff summary (customer ID, root cause, recommended action) whenever
   `escalate_to_human` fires, so a human agent has everything without reading the transcript
   (Task 1.4).
+- Put a **demo web front end** on the agent, for internal demos only (see below).
+
+### Stretch goal detail — demo web front end
+A simple web page that shows what the bot looks like to a customer, with an optional panel
+showing what the agent is doing behind the scenes. This isn't exam material. It exists so you
+can demo the finished agent to people who won't read terminal output, and so the hooks become
+visible to them.
+
+**Ground rules**
+- The front end is a thin layer over the existing agent. Don't change the agentic loop, the
+  tools, the hooks or the system prompt to make the UI work. If the UI seems to need one of those
+  changed, that's a sign the UI is doing too much.
+- Turn end is still decided by `stop_reason` only. The page shows whatever `run_turn` returns;
+  it never decides a turn is over by itself.
+- The CLI (`main.py`) must keep working exactly as it does now.
+- The API key stays on the server (`ANTHROPIC_API_KEY`, as in Stage 5). Nothing sensitive goes
+  to the browser.
+
+**Shape**
+- **Server:** a small FastAPI app (e.g. `web/server.py`) with three routes:
+  - `GET /` serves the page.
+  - `POST /chat` takes `{message}`, runs one turn, and returns the reply plus that turn's events.
+  - `POST /reset` ends the current conversation and starts a fresh one.
+- **Page:** a single `index.html` of plain HTML, CSS and JavaScript, with no framework and no
+  build step. It has a chat window with customer and agent bubbles, a "typing…" indicator while a
+  turn runs, and a "New conversation" button. Branding is up to you.
+- **Behind-the-scenes panel:** a toggleable side panel that lists each turn's events in order:
+  - tool calls and their inputs;
+  - hook decisions, especially denials (e.g. "process_refund blocked: customer not verified",
+    "refund over $200 → escalate", "outside return window");
+  - structured tool errors (`errorCategory` / `isRetryable`);
+  - the turn's `stop_reason`.
+
+**The one tricky part: conversation lifecycle**
+- `ClaudeSDKClient` is a long-lived connection. The CLI keeps it open inside one
+  `async with` block, but a web server handles each request separately. The server has to own
+  the connected client and its `RefundEnforcement` between requests. That means calling
+  `connect()` / `disconnect()` explicitly rather than using `async with` around a single request.
+- Keep it simple: **one conversation at a time**. It's a demo, so there's no multi-user session
+  store. "New conversation" disconnects the old client and creates a new client and a new
+  `RefundEnforcement`. This also shows off Stage 5's rule that verification doesn't carry into a
+  new conversation.
+- Only one turn runs at a time. Disable the send button while a turn is in flight rather than
+  queueing messages.
+
+**Refactor needed in `agent.py`**
+- `run_turn` currently prints its tool calls and stop_reason straight to stdout. Make it also
+  collect them as a list of events on `AgentResult`, or accept an optional event callback. The CLI
+  keeps printing and the server returns the list as JSON.
+- Hook decisions currently happen inside `hooks.py`. Record denials somewhere the turn can pick
+  them up (e.g. on the enforcement object), so the panel can show *why* a refund was blocked, not
+  just that the agent escalated.
+
+**Test**
+- Re-run the Stage 3, 5, 6 and 7 scenarios through the page and confirm the behaviour matches the
+  CLI. Check each one:
+  - The unverified refund is blocked, and the panel shows the hook denial.
+  - A clarifying answer in a later turn is remembered.
+  - The angry customer with an in-policy request is resolved, not escalated.
+  - A bundled two-issue message gets both answers.
+- Click "New conversation" after verifying a customer. Then ask for a refund and confirm it's
+  treated as unverified.
+
+**Out of scope:** streaming replies word by word (WebSockets/SSE), authentication, multiple
+simultaneous users, persistence across server restarts, and deployment beyond `localhost`.
 
 ---
 
