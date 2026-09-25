@@ -206,6 +206,26 @@ def build_options(enforcement: RefundEnforcement) -> ClaudeAgentOptions:
     )
 
 
+def format_cache_usage(usage: dict | None) -> str:
+    """One-line summary of how an API call's input tokens were billed.
+
+    Caching is applied by the bundled CLI automatically — nothing in
+    build_options() turns it on. This is just to watch it happen:
+      read     = input tokens served from cache (~0.1x cost)
+      write    = input tokens written to cache this call (~1.25x cost)
+      uncached = input tokens billed at the normal rate
+    Expect a big `write` on the first call of a conversation, then mostly
+    `read` on every call after it (the tools + system prompt + history
+    prefix is resent unchanged each time).
+    """
+    if not usage:
+        return "no usage reported"
+    read = usage.get("cache_read_input_tokens", 0)
+    write = usage.get("cache_creation_input_tokens", 0)
+    uncached = usage.get("input_tokens", 0)
+    return f"read={read} write={write} uncached={uncached}"
+
+
 async def run_turn(client: ClaudeSDKClient, message: str) -> AgentResult:
     """Send one customer message into the already-connected conversation
     and wait for the agent to finish responding to it."""
@@ -219,6 +239,10 @@ async def run_turn(client: ClaudeSDKClient, message: str) -> AgentResult:
     # Showing only the closer silently dropped two of three answers.
     texts: list[str] = []
     result: ResultMessage | None = None
+    # One API response can arrive as several AssistantMessages (one per
+    # content block) that share a message_id and the same usage. Track the
+    # ids already logged so each API call's cache usage prints once.
+    logged_message_ids: set[str] = set()
 
     # receive_response() yields this turn's messages and stops after the
     # ResultMessage. Unlike query()'s stream, it does NOT end the session —
@@ -237,6 +261,9 @@ async def run_turn(client: ClaudeSDKClient, message: str) -> AgentResult:
                 elif isinstance(block, TextBlock) and block.text:
                     texts.append(block.text)
                     print(f"  [assistant text] {block.text}")
+            if event.message_id not in logged_message_ids:
+                logged_message_ids.add(event.message_id)
+                print(f"  [cache] api call: {format_cache_usage(event.usage)}")
 
         if isinstance(event, ResultMessage):
             # The ONLY thing this loop uses to decide the turn is over:
@@ -251,6 +278,7 @@ async def run_turn(client: ClaudeSDKClient, message: str) -> AgentResult:
         # means the CLI process ended without producing one.
         raise RuntimeError("Agent SDK stream ended without a ResultMessage")
 
+    print(f"  [cache] turn total: {format_cache_usage(result.usage)}")
     print(f"  [stop_reason] {result.stop_reason} (is_error={result.is_error})")
     # Whether the turn succeeded is still decided by stop_reason alone; the
     # collected text only decides what the customer sees.
